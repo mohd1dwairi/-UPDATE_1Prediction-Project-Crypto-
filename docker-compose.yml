@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: admin
       POSTGRES_DB: crypto_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     # --- التعديل المضاف هنا لحفظ البيانات ---
     volumes:
       - ./postgres_data:/var/lib/postgresql/data  #النتيجة: حتى لو قمت بحذف الحاوية (Container)، أو أطفأت جهازك، أو حتى حذفت Docker نفسه، فإن بيانات المستخدمين وأسعار
