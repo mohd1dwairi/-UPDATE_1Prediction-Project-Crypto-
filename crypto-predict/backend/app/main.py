@@ -62,3 +62,7 @@ def root():
         "environment": settings.ENV,
         "database": "Connected",
     }
+
+    from app.routers.admin_reports import admin_reports # استيراد الراوتر الجديد
+# ...
+app.include_router(admin_reports.router, prefix="/api")
