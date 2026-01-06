@@ -11,6 +11,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     created_at = Column(Date, default=date.today)
     predictions = relationship("Prediction", back_populates="creator")
+    role = Column(String, default="user") # إضافة هذا السطر (القيمة الافتراضية مستخدم عادي)
 
 class Candle(Base):
     __tablename__ = "candle_ohlcv"
