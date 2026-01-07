@@ -3,60 +3,74 @@ import api from '../services/api';
 
 export default function AdminReports() {
   const [stats, setStats] = useState({});
-  const [reportData, setReportData] = useState([]);
+  const [report, setReport] = useState([]);
 
   useEffect(() => {
-    // جلب البيانات عند فتح الصفحة
-    api.get('/admin/dashboard-stats').then(res => setStats(res.data));
-    api.get('/admin/accuracy-analysis').then(res => setReportData(res.data));
+    // جلب الإحصائيات والتقارير عند تحميل المكون
+    api.get('/admin/stats').then(res => setStats(res.data));
+    api.get('/admin/accuracy-analysis').then(res => setReport(res.data));
   }, []);
 
-  // دالة الطباعة وتصدير PDF (استخدام وظيفة المتصفح الأصلية)
-  const handleExportPDF = () => {
-    window.print(); 
+  // وظيفة الطباعة وتصدير PDF
+  const handlePrint = () => {
+    window.print(); // سيقوم المتصفح تلقائياً بتحويل الصفحة الحالية لـ PDF
   };
 
   return (
-    <div className="reports-section">
-      <h3>System Overview</h3>
-      <div style={styles.grid}>
-        <div style={styles.card}>Users: {stats.total_users}</div>
-        <div style={styles.card}>Data Rows: {stats.total_records}</div>
-        <div style={styles.card}>AI Predictions: {stats.total_predictions}</div>
+    <div style={styles.reportPage}>
+      <h2 style={{borderBottom: '2px solid #3b82f6'}}>System Performance & Audit</h2>
+
+      {/* إحصائيات النظام */}
+      <div style={styles.statsRow}>
+        <div style={styles.statCard}>Users: <strong>{stats.total_users}</strong></div>
+        <div style={styles.statCard}>Market Records: <strong>{stats.total_data_points}</strong></div>
+        <div style={styles.statCard}>AI Forecasts: <strong>{stats.total_predictions}</strong></div>
       </div>
 
-      <div id="printable-table" style={{marginTop: '30px'}}>
-        <h3>Accuracy Report (Actual vs. Predicted)</h3>
+      {/* جدول تقرير الدقة - Backtesting */}
+      <div id="printable-report" style={styles.tableContainer}>
+        <h3>AI Model Accuracy Report</h3>
         <table style={styles.table}>
           <thead>
-            <tr>
-              <th>Time</th>
-              <th>Predicted ($)</th>
-              <th>Actual ($)</th>
+            <tr style={styles.th}>
+              <th>Asset</th>
+              <th>Target Time</th>
+              <th>AI Predicted ($)</th>
+              <th>Actual Market ($)</th>
+              <th>Accuracy (%)</th>
             </tr>
           </thead>
           <tbody>
-            {reportData.map((d, i) => (
-              <tr key={i}>
-                <td>{new Date(d.timestamp).toLocaleString()}</td>
-                <td>{d.predicted_price}</td>
-                <td>{d.actual_price}</td>
-              </tr>
-            ))}
+            {report.map((item, idx) => {
+              const accuracy = (100 - (Math.abs(item.actual_price - item.predicted_price) / item.actual_price * 100)).toFixed(2);
+              return (
+                <tr key={idx} style={styles.tr}>
+                  <td>{item.asset.toUpperCase()}</td>
+                  <td>{new Date(item.timestamp).toLocaleString()}</td>
+                  <td>{item.predicted_price}</td>
+                  <td>{item.actual_price}</td>
+                  <td style={{color: accuracy > 90 ? '#22c55e' : '#eab308'}}>{accuracy}%</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      <button onClick={handleExportPDF} style={styles.exportBtn}>
-        Export Report to PDF 📄
+      <button onClick={handlePrint} style={styles.printBtn}>
+        Export Full Report to PDF 📄
       </button>
     </div>
   );
 }
 
 const styles = {
-    grid: { display: 'flex', gap: '15px' },
-    card: { background: '#1a1a1a', padding: '20px', borderRadius: '8px', flex: 1, border: '1px solid #333' },
-    table: { width: '100%', borderCollapse: 'collapse', background: '#111' },
-    exportBtn: { marginTop: '20px', padding: '12px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }
+  reportPage: { padding: '20px', background: '#0d1117', borderRadius: '12px' },
+  statsRow: { display: 'flex', gap: '15px', marginBottom: '30px' },
+  statCard: { background: '#161b22', padding: '20px', borderRadius: '8px', flex: 1, textAlign: 'center', border: '1px solid #30363d' },
+  tableContainer: { background: '#161b22', padding: '20px', borderRadius: '8px' },
+  table: { width: '100%', borderCollapse: 'collapse', marginTop: '15px' },
+  th: { textAlign: 'left', color: '#8b949e', borderBottom: '1px solid #30363d' },
+  tr: { borderBottom: '1px solid #21262d' },
+  printBtn: { marginTop: '20px', padding: '12px 24px', background: '#238636', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }
 };

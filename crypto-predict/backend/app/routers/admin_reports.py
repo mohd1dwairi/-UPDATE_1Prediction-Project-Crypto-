@@ -6,27 +6,32 @@ from app.db import models
 
 router = APIRouter(prefix="/admin", tags=["Admin Reports"])
 
-# --- أرقام النظام (سهل) ---
-@router.get("/dashboard-stats")
-def get_stats(db: Session = Depends(get_db)):
+# --- 1. إحصائيات النظام العامة ---
+@router.get("/stats")
+def get_system_overview(db: Session = Depends(get_db)):
+    """جلب أرقام ملخصة عن حالة قاعدة البيانات"""
     return {
         "total_users": db.query(models.User).count(),
-        "total_records": db.query(models.Candle).count(),
+        "total_data_points": db.query(models.Candle).count(),
         "total_predictions": db.query(models.Prediction).count()
     }
 
-# --- تقرير الدقة (Backtesting) ---
+# --- 2. تحليل دقة التوقع (Backtesting) ---
 @router.get("/accuracy-analysis")
-def get_accuracy(db: Session = Depends(get_db)):
-    # مقارنة سعر الإغلاق الحقيقي بسعر التوقع المخزن سابقاً
+def get_accuracy_report(db: Session = Depends(get_db)):
+    """
+    مقارنة السعر المتوقع بالسعر الحقيقي الفعلي.
+    نبحث عن التوقعات التي مر وقتها وأصبح سعرها الحقيقي متاحاً.
+    """
     results = db.query(
         models.Prediction.timestamp,
         models.Prediction.predicted_price,
-        models.Candle.close.label("actual_price")
+        models.Candle.close.label("actual_price"),
+        models.Prediction.asset
     ).join(
         models.Candle, 
         (models.Prediction.asset == models.Candle.asset) & 
         (models.Prediction.timestamp == models.Candle.timestamp)
-    ).limit(20).all()
+    ).limit(50).all()
     
     return results
