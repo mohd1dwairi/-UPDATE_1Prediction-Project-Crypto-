@@ -55,6 +55,7 @@ class Prediction(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False)
     predicted_price = Column(Float, nullable=False)
     model_used = Column(String(50))
-    confidence = Column(String(10))
+    confidence = Column(Float)
     created_by_user_id = Column(Integer, ForeignKey("users.user_id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     creator = relationship("User", back_populates="predictions")
