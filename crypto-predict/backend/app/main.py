@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-
+from app.routers import admin_reports
 # استيراد أدوات قاعدة البيانات والجدولة
 from app.db.session import engine
 from app.db.models import Base
