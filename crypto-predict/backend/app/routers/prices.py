@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session 
 from sqlalchemy import func
 import pandas as pd
 import io
-from datetime import datetime, timedelta
-from pydantic import BaseModel
+from datetime import datetime, timedelta, timezone
+from typing import List
 
 from app.db.session import get_db
 from app.db import models
@@ -13,164 +13,168 @@ from app.services.inference_service import inference_engine
 router = APIRouter(prefix="/prices", tags=["Prices"])
 
 # ==========================================
-# 1. تعريف شكل البيانات المدخلة (Schemas) - [الأسهل]
+# 1. Fetch Top Assets Cards
+# جلب أحدث الأسعار لعرضها في البطاقات العلوية (Dashboard)
 # ==========================================
-class MarketDataInput(BaseModel):
-    symbol: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    avg_sentiment: float
-    sent_count: int = 0
-    pos_count: int = 0
-    neg_count: int = 0
-    neu_count: int = 0
-    pos_ratio: float = 0.0
-    neg_ratio: float = 0.0
-    neu_ratio: float = 0.0
-    has_news: int = 0
-
-# ==========================================
-# 2. جلب البيانات التاريخية (GET) - [بسيط]
-# ==========================================
-
 @router.get("/top-assets")
 def get_top_assets(db: Session = Depends(get_db)):
-    """جلب أحدث سعر لكل عملة لعرض البطاقات العلوية"""
+    # العثور على أحدث توقيت (Timestamp) لكل عملة لضمان جلب السعر الحالي
     subquery = db.query(
-        models.Candle.asset,
+        models.Candle.asset_id,
         func.max(models.Candle.timestamp).label("max_ts")
-    ).group_by(models.Candle.asset).subquery()
+    ).group_by(models.Candle.asset_id).subquery()
 
-    latest_prices = db.query(models.Candle).join(
-        subquery, (models.Candle.asset == subquery.c.asset) & (models.Candle.timestamp == subquery.c.max_ts)
-    ).all()
+    # جلب بيانات الشموع مع ربطها بجدول العملات للحصول على الرموز (Symbols)
+    latest_prices = db.query(models.Candle, models.CryptoAsset.symbol).join(
+        subquery, (models.Candle.asset_id == subquery.c.asset_id) & 
+                  (models.Candle.timestamp == subquery.c.max_ts)
+    ).join(models.CryptoAsset, models.Candle.asset_id == models.CryptoAsset.asset_id).all()
 
     return [
-        {"id": p.asset.upper(), "name": p.asset.upper(), "price": p.close, "change": 0.5} 
-        for p in latest_prices
+        {
+            "id": row.symbol.upper(), 
+            "name": row.symbol.upper(), 
+            "price": float(row.Candle.close), 
+            "change": 0.5  # يمكن ربطها بحساب نسبة التغير لاحقاً
+        } for row in latest_prices
     ]
 
+# ==========================================
+# 2. Historical Data for Chart
+# جلب البيانات التاريخية لرسم مخططات الـ Candlestick
+# ==========================================
 @router.get("/{symbol}")
 def get_historical_ohlcv(symbol: str, db: Session = Depends(get_db)):
-    """جلب البيانات التاريخية للرسم البياني"""
-    target_asset = symbol.lower()
+    # التحقق من وجود العملة في قاعدة البيانات أولاً
+    asset = db.query(models.CryptoAsset).filter(models.CryptoAsset.symbol == symbol.upper()).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Asset {symbol} not found")
+
+    # جلب آخر 150 نقطة بيانات مرتبطة بالعملة
     data = db.query(models.Candle).filter(
-        models.Candle.asset == target_asset
+        models.Candle.asset_id == asset.asset_id
     ).order_by(models.Candle.timestamp.desc()).limit(150).all()
     
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
-
     return sorted([
-        {"x": c.timestamp, "y": [c.open, c.high, c.low, c.close]} for c in data
+        {"x": c.timestamp, "y": [float(c.open), float(c.high), float(c.low), float(c.close)]} 
+        for c in data
     ], key=lambda x: x['x'])
 
 # ==========================================
-# 3. إدارة البيانات (Admin) - [متوسط]
+# 3. Bulk CSV Upload (Fast Import)
+# رفع ملفات CSV الضخمة ومعالجة البيانات وربطها بالـ IDs تلقائياً
 # ==========================================
-
 @router.post("/upload-csv")
 async def upload_csv_data(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """رفع بيانات تاريخية ضخمة عبر CSV"""
+    """
+    مسار مخصص لرفع البيانات التاريخية. 
+    ملاحظة: اضغط على 'Try it out' في Swagger ليظهر زر اختيار الملف.
+    """
     try:
+        # قراءة محتوى الملف وتحويله لـ DataFrame
         content = await file.read()
         df = pd.read_csv(io.BytesIO(content))
+        
+        # توحيد أسماء الأعمدة لتجنب أخطاء حالة الأحرف (KeyError)
+        df.columns = [c.lower().strip() for c in df.columns]
+
+        # تحديد العمود الذي يحتوي على اسم العملة
+        asset_col = 'asset' if 'asset' in df.columns else 'symbol' if 'symbol' in df.columns else None
+        if not asset_col:
+            raise HTTPException(status_code=400, detail="Missing 'asset' or 'symbol' column in CSV")
+
+        # إنشاء خريطة سريعة للربط بين الرمز والـ ID لتجنب الاستعلامات المتكررة
+        assets_map = {a.symbol.lower(): a.asset_id for a in db.query(models.CryptoAsset).all()}
+        
         new_candles = []
         for _, row in df.iterrows():
-            new_candles.append(models.Candle(
-                asset=str(row['asset']).lower(),
-                timestamp=pd.to_datetime(row['timestamp']),
-                open=float(row['open']), high=float(row['high']),
-                low=float(row['low']), close=float(row['close']), volume=float(row['volume'])
-            ))
+            symbol_name = str(row[asset_col]).lower()
+            asset_id = assets_map.get(symbol_name)
+            
+            if asset_id:
+                new_candles.append(models.Candle(
+                    asset_id=asset_id,
+                    timeframe_id=1,  # 1 تعني إطار الساعة الواحدة (1h)
+                    timestamp=pd.to_datetime(row['timestamp']),
+                    open=row['open'],
+                    high=row['high'],
+                    low=row['low'],
+                    close=row['close'],
+                    volume=row['volume'],
+                    exchange=row.get('exchange', 'Binance')
+                ))
+
+        # استخدام تقنية الحفظ بالجملة للتعامل مع آلاف السجلات بسرعة
         db.bulk_save_objects(new_candles)
         db.commit()
-        return {"status": "success", "message": f"Successfully imported {len(new_candles)} records."}
+        
+        return {"status": "success", "message": f"Imported {len(new_candles)} records successfully!"}
+    
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Data Processing Error: {str(e)}")
 
 # ==========================================
-# 4. محرك التوقع الذكي (AI Predict) - [الأصعب والأهم]
+# 4. AI Smart Prediction Engine
+# توليد توقعات مستقبلية باستخدام محرك الذكاء الاصطناعي
 # ==========================================
-
 @router.get("/predict/{symbol}")
 def get_ai_prediction(symbol: str, db: Session = Depends(get_db)):
-    """
-    يقوم بعملية التوقع، تنظيف البيانات، وحفظها في قاعدة البيانات.
-    يتم تخزين النتائج لتعكس دقة النظام في لوحة تحكم الأدمن.
-    """
     try:
-        target_asset = symbol.lower()
-        
-        # 1. جلب بيانات السعر والمشاعر لآخر 48 ساعة
+        # البحث عن مرجع العملة
+        asset = db.query(models.CryptoAsset).filter(models.CryptoAsset.symbol == symbol.upper()).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+
+        # جلب البيانات التاريخية (شموع + مشاعر) اللازمة لعملية التنبؤ
         query_results = db.query(models.Candle, models.Sentiment).join(
             models.Sentiment, 
-            (models.Candle.asset == models.Sentiment.asset) & 
+            (models.Candle.asset_id == models.Sentiment.asset_id) & 
             (models.Candle.timestamp == models.Sentiment.timestamp)
-        ).filter(models.Candle.asset == target_asset).order_by(models.Candle.timestamp.desc()).limit(48).all()
+        ).filter(models.Candle.asset_id == asset.asset_id).order_by(models.Candle.timestamp.desc()).limit(48).all()
 
         if len(query_results) < 48:
-            raise HTTPException(status_code=400, detail="Incomplete data for 48h simulation.")
+            raise HTTPException(status_code=400, detail="Insufficient historical data for AI (48h required).")
 
-        # 2. تجهيز البيانات لموديل التوقع
-        feature_data = []
-        for candle, sentiment in query_results:
-            feature_data.append({
-                "timestamp": candle.timestamp, "open": candle.open, "high": candle.high, 
-                "low": candle.low, "close": candle.close, "volume": candle.volume,
-                "sent_count": sentiment.sent_count, "avg_sentiment": sentiment.avg_sentiment,
-                "pos_count": sentiment.pos_count, "neg_count": sentiment.neg_count,
-                "neu_count": sentiment.neu_count, "pos_ratio": sentiment.pos_ratio,
-                "neg_ratio": sentiment.neg_ratio, "neu_ratio": sentiment.neu_ratio, "has_news": sentiment.has_news
-            })
+        # تحضير البيانات لنموذج التوقع
+        feature_data = [
+            {
+                "open": float(c.open), "high": float(c.high), "low": float(c.low), 
+                "close": float(c.close), "volume": float(c.volume),
+                "avg_sentiment": s.avg_sentiment, "sent_count": s.sent_count
+            } for c, s in query_results
+        ]
         
-        df_input = pd.DataFrame(feature_data).sort_values("timestamp")
-        feature_cols = ["open", "high", "low", "close", "volume", "sent_count", "avg_sentiment", 
-                        "pos_count", "neg_count", "neu_count", "pos_ratio", "neg_ratio", "neu_ratio", "has_news"]
+        df_input = pd.DataFrame(feature_data)
+        prediction_result = inference_engine.predict(df_input)
 
-        # 3. تشغيل الموديل
-        prediction_result = inference_engine.predict(df_input[feature_cols])
-
-        # 4. معالجة وحفظ النتائج في قاعدة البيانات
+        # حفظ النتائج المتوقعة لـ 5 فترات مستقبلية في قاعدة البيانات
+        last_candle = query_results[0][0]
         future_results = []
-        last_price = df_input["close"].iloc[-1]
-        last_timestamp = df_input["timestamp"].iloc[-1]
-
-        # تنظيف نسبة الثقة (Confidence): تحويل "44%" إلى 0.44
-        raw_conf = str(prediction_result["confidence"]).replace('%', '')
-        conf_float = float(raw_conf)
-        final_confidence = conf_float / 100 if conf_float > 1 else conf_float
-
+        
         for i in range(1, 6):
-            simulated_time = last_timestamp + timedelta(hours=i)
-            predicted_val = round(last_price * (1 + (prediction_result["predicted_return"] * i / 5)), 2)
+            simulated_time = last_candle.timestamp + timedelta(hours=i)
+            # تطبيق نسبة التغير المتوقعة من الموديل على آخر سعر إغلاق
+            predicted_val = float(last_candle.close) * (1 + (prediction_result["predicted_return"] * i / 5))
             
-            # --- حفظ التوقع في PostgreSQL لتقرير الأدمن ---
             db_prediction = models.Prediction(
-                asset=target_asset,
+                asset_id=asset.asset_id,
+                timeframe_id=1,
                 timestamp=simulated_time,
-                predicted_price=predicted_val,
-                model_used="XGBoost_LSTM_Hybrid", 
-                confidence=final_confidence,
-                created_at=datetime.now() # لن يظهر الخطأ الآن إذا أضفته للموديل
+                predicted_price=round(predicted_val, 2),
+                model_used="XGBoost_LSTM_Hybrid",
+                confidence=float(str(prediction_result["confidence"]).replace('%','')) / 100,
+                created_at=datetime.now(timezone.utc)
             )
             db.add(db_prediction)
-
             future_results.append({
-                "timestamp": simulated_time.isoformat(),
-                "predicted_value": predicted_val,
-                "trend": prediction_result["trend"],
-                "confidence": prediction_result["confidence"] 
+                "timestamp": simulated_time.isoformat(), 
+                "predicted_value": round(predicted_val, 2)
             })
 
-        db.commit() # تأكيد الحفظ
+        db.commit()
         return future_results
 
     except Exception as e:
         db.rollback()
-        print(f"Error in Predict: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"AI Engine Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

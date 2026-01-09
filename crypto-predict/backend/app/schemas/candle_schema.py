@@ -1,29 +1,35 @@
+# هذا الملف يحدد شكل بيانات أسعار العملات (الشموع) عند الإدخال والإخراج
 from pydantic import BaseModel, Field
 from decimal import Decimal
 from datetime import datetime
+from typing import Optional
 
-# 1️⃣ المخطط الأساسي للبيانات (يحتوي على تفاصيل الشمعة فقط)
+# 1️⃣ المخطط الأساسي (يحتوي على تفاصيل الشمعة الخام)
 class CandleBase(BaseModel):
-    # النوع datetime كما ورد في التقرير [cite: 259]
+    # التوقيت حسب الرسمة
     timestamp: datetime
-    symbol: str # رمز الأصل (مثل BTCUSD) [cite: 261]
-    # دقة 18,8 للأسعار (Open, High, Low, Close) [cite: 260, 262, 263, 264]
+    
+    # حقل "البورصة" المذكور في الرسمة (Binance مثلاً)
+    exchange: Optional[str] = Field(None, max_length=20)
+    
+    # دقة الأسعار 18,8 كما ورد في التقرير والرسمة
     open: Decimal = Field(..., max_digits=18, decimal_places=8)
     high: Decimal = Field(..., max_digits=18, decimal_places=8)
     low: Decimal = Field(..., max_digits=18, decimal_places=8)
     close: Decimal = Field(..., max_digits=18, decimal_places=8)
-    # دقة 20,8 للكمية (Volume) [cite: 265]
-    volume: Decimal = Field(..., max_digits=20, decimal_places=8)
-
-# 2️⃣ المخطط المستخدم عند جلب البيانات من قاعدة البيانات أو الـ API
-class CandleResponse(CandleBase):
-    # استخدام candle_id بدلاً من id 
-    candle_id: int
     
-    # إضافة روابط المفاتيح الأجنبية الموجودة في التقرير [cite: 266, 268]
-    asset_id: int
-    timeframe_id: int
+    # دقة الكمية 20,8
+    volume: Decimal = Field(..., max_digits=20, decimal_places=8)
+    
+    # الربط بالمفاتيح الأجنبية كما تظهر الوصلات في الرسمة
+    asset_id: int = Field(..., description="رقم العملة من جدول CryptoAsset")
+    timeframe_id: int = Field(..., description="رقم الفترة من جدول Timeframe")
+
+# 2️⃣ المخطط المستخدم عند استعادة البيانات من السيستم (Response)
+class CandleResponse(CandleBase):
+    # المسمى حرفياً حسب الرسمة (ERD)
+    candle_id: int 
 
     class Config:
-        # للسماح بقراءة البيانات من SQLAlchemy Models
+        # يسمح لـ FastAPI بتحويل بيانات SQLAlchemy إلى JSON تلقائياً
         from_attributes = True

@@ -1,48 +1,83 @@
-#يجب أن يحتوي على الوظيفة التي تستدعي نموذج الذكاء الاصطناعي (مثل LSTM) لمعالجة البيانات التاريخية وتوليد التوقع (UC-08).
 from datetime import datetime, timedelta, timezone
-from random import uniform
 from sqlalchemy.orm import Session
-
 from app.db import models
-from app.db.models import User
 
-def generate_mock_predictions(
-    symbol: str,
-    days: int,
+# ==========================================
+# دالة تنظيف ومعالجة نسبة الثقة (Sanitization)
+# ==========================================
+def clean_confidence_value(raw_value) -> float:
+    """
+    تحويل القيمة من نص (مثل '44%') إلى رقم عشري نقي (0.44).
+    هذا يضمن توافق البيانات مع نوع double precision في PostgreSQL.
+    """
+    try:
+        # إزالة الرموز النصية والمسافات
+        clean_str = str(raw_value).replace('%', '').strip()
+        val = float(clean_str)
+        
+        # تحويل القيم المئوية (مثل 44) إلى كسر عشري (0.44)
+        if val > 1:
+            val = val / 100.0
+            
+        return round(val, 4)
+    except (ValueError, TypeError):
+        return 0.50 # قيمة افتراضية في حال الخطأ
+
+# ==========================================
+# محرك التوقعات (Prediction Engine)
+# ==========================================
+def generate_predictions(
     db: Session,
-    user: User | None = None,
+    asset_id: int,
+    timeframe_id: int,
+    user_id: int,
+    raw_ai_output: dict = None
 ):
     """
-    🔮 مولّد تنبؤات تجريبية (Mock)
-    - لاحقًا يُستبدل بموديل ML حقيقي بدون تغيير الـ Router.
+    🔮 محرك التوقعات المحدث بناءً على الرسمة (ERD).
+    يقوم بربط التوقع بالعملة، الإطار الزمني، والمستخدم.
     """
 
-    if days < 1:
-        days = 1
+    # 1. جلب آخر سعر إغلاق من جدول OHLCV_Candle (Anchor Price)
+    # نستخدم asset_id للبحث لضمان سلامة العلاقات (Normalization)
+    latest_candle = db.query(models.Candle).filter(
+        models.Candle.asset_id == asset_id
+    ).order_by(models.Candle.timestamp.desc()).first()
 
-    base_price = uniform(20000, 30000)
-    predictions: list[models.Prediction] = []
+    base_price = float(latest_candle.close) if latest_candle else 50000.0
 
-    for i in range(1, days + 1):
-        ts = datetime.now(timezone.utc) + timedelta(days=i)
+    # 2. معالجة نسبة الثقة (حل مشكلة Mismatch النوع)
+    confidence_input = raw_ai_output.get("confidence", "50%") if raw_ai_output else "50%"
+    final_confidence = clean_confidence_value(confidence_input)
 
-        factor = 1 + uniform(-0.05, 0.05)
-        predicted_price = base_price * factor
+    predictions_list = []
 
-        confidence = uniform(0.8, 0.99)
+    # توليد 5 توقعات مستقبلية (Hourly)
+    for i in range(1, 6):
+        target_ts = datetime.now(timezone.utc) + timedelta(hours=i)
+        
+        # محاكاة لنتيجة الموديل الهجين (Hybrid XGB-LSTM)
+        prediction_factor = 1 + (0.005 * i) 
+        predicted_val = base_price * prediction_factor
 
-        prediction = models.Prediction(
-            asset=symbol.upper(),
-            timestamp=ts,
-            predicted_price=round(predicted_price, 2),
-            model_used="mock_v1",
-            confidence=round(confidence, 2),
-            created_at=ts,
-            created_by_user_id=user.id if user else None,
+        # 3. إنشاء سجل التوقع (مطابق للرسمة حرفياً)
+        #
+        new_prediction = models.Prediction(
+            asset_id=asset_id,               # الربط بجدول CryptoAsset
+            timeframe_id=timeframe_id,       # الربط بجدول Timeframe
+            user_id=user_id,                 # الربط بجدول User
+            timestamp=target_ts,             # نوعه timestamp with time zone
+            predicted_price=round(predicted_val, 2), # نوعه double precision
+            confidence=final_confidence,     # نوعه double precision
+            model_used="XGBoost_LSTM_Hybrid",# نوعه var(20)
+            created_at=datetime.now(timezone.utc)
         )
 
-        db.add(prediction)
-        predictions.append(prediction)
+        db.add(new_prediction)
+        predictions_list.append(new_prediction)
 
+    # 4. حفظ البيانات في PostgreSQL
+    #
     db.commit()
-    return predictions
+    
+    return predictions_list

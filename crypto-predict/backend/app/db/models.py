@@ -1,70 +1,122 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, Boolean, JSON, UniqueConstraint, Index, func
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKey, DECIMAL, func
 from sqlalchemy.orm import relationship
 from datetime import date
 from app.db.session import Base
-##############################
+
+# ==========================================
+# 1) جدول العملات المشفرة (CryptoAsset)
+# ==========================================
+class CryptoAsset(Base):
+    __tablename__ = "crypto_assets"
+    asset_id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False)
+    name = Column(String(100))
+
+    # علاقات (Relationships)
+    sentiments = relationship("Sentiment", back_populates="asset_ref")
+    predictions = relationship("Prediction", back_populates="asset_ref")
+    candles = relationship("Candle", back_populates="asset_ref")
+
+# ==========================================
+# 2) جدول الفترات الزمنية (Timeframe)
+# ==========================================
+class Timeframe(Base):
+    __tablename__ = "timeframes"
+    timeframe_id = Column(Integer, primary_key=True)
+    code = Column(String(10), nullable=False) # مثل 1h, 4h
+    description = Column(String(255))
+
+    predictions = relationship("Prediction", back_populates="timeframe_ref")
+    candles = relationship("Candle", back_populates="timeframe_ref")
+
+# ==========================================
+# 3) جدول المستخدمين (User)
+# ==========================================
 class User(Base):
     __tablename__ = "users"
     user_id = Column(Integer, primary_key=True, index=True)
     User_Name = Column(String(50), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="user")
     created_at = Column(Date, default=date.today)
-    predictions = relationship("Prediction", back_populates="creator")
-    role = Column(String, default="user") # إضافة هذا السطر (القيمة الافتراضية مستخدم عادي)
-    
-class Candle(Base):
-    __tablename__ = "candle_ohlcv"
-    iid = Column(Integer, primary_key=True)
-    asset = Column(String(20), nullable=False, index=True)
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    open = Column(Float, nullable=False)
-    high = Column(Float, nullable=False)
-    low = Column(Float, nullable=False)
-    close = Column(Float, nullable=False)
-    volume = Column(Float, nullable=False)
-    __table_args__ = (UniqueConstraint("asset", "timestamp", name="uq_candle_asset_ts"),)
 
+    predictions = relationship("Prediction", back_populates="creator")
+    model_logs = relationship("ModelLog", back_populates="user_ref")
+
+# ==========================================
+# 4) جدول المشاعر (Sentiments)
+# ==========================================
 class Sentiment(Base):
     __tablename__ = "sentiments"
-
     id = Column(Integer, primary_key=True)
-    asset = Column(String(20), nullable=False, index=True)
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    sentiment_score = Column(DECIMAL(5, 4))
+    source = Column(String(100))
+    sentiment_id = Column(Integer)
+    avg_sentiment = Column(Float)
+    sent_count = Column(Integer)
+    pos_count = Column(Integer)
+    neg_count = Column(Integer)
     
-    # الأعمدة الـ 9 الخاصة بالمشاعر (مطابقة تماماً لملف CSV)
-    sent_count = Column(Integer, default=0)
-    avg_sentiment = Column(Float, default=0.0)
-    pos_count = Column(Integer, default=0)
-    neg_count = Column(Integer, default=0)
-    neu_count = Column(Integer, default=0)
-    pos_ratio = Column(Float, default=0.0)
-    neg_ratio = Column(Float, default=0.0)
-    neu_ratio = Column(Float, default=0.0)
-    has_news = Column(Integer, default=0)
+    # الربط حسب الرسمة
+    asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
+    asset_ref = relationship("CryptoAsset", back_populates="sentiments")
 
-    # لمنع تكرار نفس الساعة لنفس العملة
-    __table_args__ = (
-        UniqueConstraint("asset", "timestamp", name="uq_sent_asset_ts"),
-    )
+# ==========================================
+# 5) جدول الشموع (OHLCV_Candle)
+# ==========================================
+class Candle(Base):
+    __tablename__ = "candle_ohlcv"
+    candle_id = Column(Integer, primary_key=True)
+    exchange = Column(String(20)) # من الرسمة
+    timestamp = Column(DateTime, nullable=False)
+    open = Column(DECIMAL(18, 8), nullable=False)
+    high = Column(DECIMAL(18, 8), nullable=False)
+    low = Column(DECIMAL(18, 8), nullable=False)
+    close = Column(DECIMAL(18, 8), nullable=False)
+    volume = Column(DECIMAL(20, 8), nullable=False)
+    
+    # الربط حسب الرسمة
+    asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
+    timeframe_id = Column(Integer, ForeignKey("timeframes.timeframe_id"))
+    
+    asset_ref = relationship("CryptoAsset", back_populates="candles")
+    timeframe_ref = relationship("Timeframe", back_populates="candles")
 
+# ==========================================
+# 6) جدول التوقعات (Prediction)
+# ==========================================
 class Prediction(Base):
     __tablename__ = "prediction"
-    id = Column(Integer, primary_key=True)
-    asset = Column(String(20), nullable=False)
-    timestamp = Column(DateTime(timezone=True), nullable=False)
+    id_Prediction = Column(Integer, primary_key=True) # الاسم حسب الرسمة
+    asset = Column(String(20)) 
+    timestamp = Column(DateTime(timezone=True))
     predicted_price = Column(Float, nullable=False)
-    model_used = Column(String(50))
     confidence = Column(Float)
-    created_by_user_id = Column(Integer, ForeignKey("users.user_id"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    creator = relationship("User", back_populates="predictions")
+    model_used = Column(String(20))
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # الروابط الثلاثية حسب الرسمة
+    user_id = Column(Integer, ForeignKey("users.user_id"))
+    asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
+    timeframe_id = Column(Integer, ForeignKey("timeframes.timeframe_id"))
 
-# أضف هذا الكلاس إلى ملف models.py
+    creator = relationship("User", back_populates="predictions")
+    asset_ref = relationship("CryptoAsset", back_populates="predictions")
+    timeframe_ref = relationship("Timeframe", back_populates="predictions")
+
+# ==========================================
+# 7) جدول سجلات التدريب (Model_Log)
+# ==========================================
 class ModelLog(Base):
     __tablename__ = "model_logs"
-    id = Column(Integer, primary_key=True, index=True)
-    trained_at = Column(DateTime, default=func.now()) # وقت تنفيذ العملية
-    records_count = Column(Integer, default=0)         # عدد السجلات التي تدرب عليها الموديل
-    status = Column(String(50))                        # حالة العملية: "Success" أو "Failed"
-    error_message = Column(String(500), nullable=True) # رسالة الخطأ في حال الفشل
+    id = Column(Integer, primary_key=True)
+    trained_at = Column(DateTime, default=func.now())
+    records_count = Column(Integer)
+    status = Column(String(20))
+    error_message = Column(String(500))
+    
+    # الربط بالمستخدم حسب الرسمة
+    user_id = Column(Integer, ForeignKey("users.user_id"))
+    user_ref = relationship("User", back_populates="model_logs")
