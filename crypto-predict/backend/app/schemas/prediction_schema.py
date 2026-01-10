@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 
-# المخطط الأساسي
 class PredictionBase(BaseModel):
     asset_id: int 
     timeframe_id: int
@@ -12,9 +11,9 @@ class PredictionBase(BaseModel):
     confidence: Optional[float] = None
     model_used: str = Field(..., max_length=20)
 
-# المخطط الخاص بالرد (Response)
+# المخطط   (Response)
 class PredictionResponse(PredictionBase):
-    id_Prediction: int # نفس الاسم في الموديل عندك
+    id_Prediction: int     
     user_id: int
     created_at: datetime
 

@@ -3,9 +3,7 @@ from sqlalchemy.orm import relationship
 from datetime import date
 from app.db.session import Base
 
-# ==========================================
-# 1) جدول العملات المشفرة (CryptoAsset)
-# ==========================================
+# جدول   (CryptoAsset)
 class CryptoAsset(Base):
     __tablename__ = "crypto_assets"
     asset_id = Column(Integer, primary_key=True)
@@ -17,9 +15,7 @@ class CryptoAsset(Base):
     predictions = relationship("Prediction", back_populates="asset_ref")
     candles = relationship("Candle", back_populates="asset_ref")
 
-# ==========================================
-# 2) جدول الفترات الزمنية (Timeframe)
-# ==========================================
+# 2) جدول   (Timeframe)
 class Timeframe(Base):
     __tablename__ = "timeframes"
     timeframe_id = Column(Integer, primary_key=True)
@@ -29,9 +25,7 @@ class Timeframe(Base):
     predictions = relationship("Prediction", back_populates="timeframe_ref")
     candles = relationship("Candle", back_populates="timeframe_ref")
 
-# ==========================================
 # 3) جدول المستخدمين (User)
-# ==========================================
 class User(Base):
     __tablename__ = "users"
     user_id = Column(Integer, primary_key=True, index=True)
@@ -44,7 +38,7 @@ class User(Base):
     predictions = relationship("Prediction", back_populates="creator")
     model_logs = relationship("ModelLog", back_populates="user_ref")
 
-# ==========================================
+
 # 4) جدول المشاعر (Sentiments)
 
 class Sentiment(Base):
@@ -66,9 +60,8 @@ class Sentiment(Base):
     asset_ref = relationship("CryptoAsset", back_populates="sentiments")
 
 
-# ==========================================
-# 5) جدول الشموع (OHLCV_Candle)
-# ==========================================
+# 5) جدول   (OHLCV_Candle)
+
 class Candle(Base):
     __tablename__ = "candle_ohlcv"
     candle_id = Column(Integer, primary_key=True)
@@ -80,16 +73,14 @@ class Candle(Base):
     close = Column(DECIMAL(18, 8), nullable=False)
     volume = Column(DECIMAL(20, 8), nullable=False)
     
-    # الربط حسب الرسمة
     asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
     timeframe_id = Column(Integer, ForeignKey("timeframes.timeframe_id"))
     
     asset_ref = relationship("CryptoAsset", back_populates="candles")
     timeframe_ref = relationship("Timeframe", back_populates="candles")
 
-# ==========================================
-# 6) جدول التوقعات (Prediction)
-# ==========================================
+# 6) جدول  (Prediction)
+
 class Prediction(Base):
     __tablename__ = "prediction"
     id_Prediction = Column(Integer, primary_key=True) # الاسم حسب الرسمة
@@ -109,9 +100,7 @@ class Prediction(Base):
     asset_ref = relationship("CryptoAsset", back_populates="predictions")
     timeframe_ref = relationship("Timeframe", back_populates="predictions")
 
-# ==========================================
-# 7) جدول سجلات التدريب (Model_Log)
-# ==========================================
+# 7) جدول   (Model_Log)
 class ModelLog(Base):
     __tablename__ = "model_logs"
     id = Column(Integer, primary_key=True)
@@ -119,7 +108,6 @@ class ModelLog(Base):
     records_count = Column(Integer)
     status = Column(String(20))
     error_message = Column(String(500))
-    
-    # الربط بالمستخدم حسب الرسمة
+    # ربط السجل بالمستخدم
     user_id = Column(Integer, ForeignKey("users.user_id"))
     user_ref = relationship("User", back_populates="model_logs")
