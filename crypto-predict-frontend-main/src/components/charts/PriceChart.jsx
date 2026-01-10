@@ -90,9 +90,11 @@ export default function PriceChart({ historyData, predictionData, showPrediction
       x: { format: 'dd MMM HH:mm' },
       style: { fontSize: '14px' }
     },
+    
     legend: {
       position: 'top',
       horizontalAlign: 'right',
+      fontWeight: '400',
       fontSize: '14px',
       markers: { radius: 12 },
       labels: { colors: '#ffffff' },
