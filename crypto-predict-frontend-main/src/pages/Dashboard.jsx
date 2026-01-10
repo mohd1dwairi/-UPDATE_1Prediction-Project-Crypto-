@@ -5,59 +5,62 @@ import CsvUpload from "../components/CsvUpload.jsx";
 import api from "../services/api";
 
 export default function Dashboard() {
-  // ==========================================
-  // 1. تعريف الحالة (States) - [الأسهل]
-  // ==========================================
-  const [selectedCoin, setSelectedCoin] = useState("BTC"); // العملة المختارة حالياً
-  const [history, setHistory] = useState([]);             // سجل الأسعار التاريخي للرسم البياني
-  const [predictions, setPredictions] = useState([]);       // نتائج توقعات الذكاء الاصطناعي
-  const [stats, setStats] = useState([]);                 // إحصائيات العملات العلوية
-  const [showPrediction, setShowPrediction] = useState(false); // حالة إظهار التوقعات
+  const [selectedCoin, setSelectedCoin] = useState("BTC");
+  const [history, setHistory] = useState([]);
+  const [predictions, setPredictions] = useState([]);
+  const [stats, setStats] = useState([]);
+  const [showPrediction, setShowPrediction] = useState(false);
 
-  // استرجاع معلومات الهوية والصلاحيات من التخزين المحلي
   const userRole = localStorage.getItem("user_role"); 
   const username = localStorage.getItem("username");
 
-  // ==========================================
-  // 2. جلب البيانات (Effects) - [متوسط الصعوبة]
-  // ==========================================
-
-  // جلب إحصائيات أفضل العملات عند تحميل الصفحة لأول مرة
+  // جلب إحصائيات أفضل العملات
   useEffect(() => {
     api.get("/prices/top-assets").then(res => setStats(res.data));
   }, []);
 
-  // تحديث الرسم البياني التاريخي تلقائياً عند تغيير العملة من القائمة
+  // تحديث الرسم البياني التاريخي عند تغيير العملة
   useEffect(() => {
     api.get(`/prices/${selectedCoin}`).then(res => setHistory(res.data));
-    setShowPrediction(false); // إعادة تعيين حالة التوقع عند تغيير العملة
+    setShowPrediction(false); 
   }, [selectedCoin]);
 
   // ==========================================
-  // 3. منطق التفاعل والـ AI - [الأصعب]
+  // دالة جلب التوقعات - تم إصلاح مسميات الحقول والرموز
   // ==========================================
-
-  // دالة التواصل مع محرك الذكاء الاصطناعي لجلب التوقعات المستقبلية
   const handlePredictClick = async () => {
     try {
       const res = await api.get(`/prices/predict/${selectedCoin}`);
-      setPredictions(res.data);
+      
+      // تحويل البيانات لتناسب مكونات العرض (Chart & Table)
+      const formattedPredictions = res.data.map((item, index) => {
+        const prevPrice = index > 0 ? res.data[index-1].predicted_price : 0;
+        const trendStatus = item.predicted_price > prevPrice ? 'Up' : 'Stable';
+
+        return {
+          ...item,
+          predicted_value: item.predicted_price, // مطابقة predicted_price مع predicted_value
+          display_confidence: (item.confidence * 100).toFixed(2) + "%",
+          trend: trendStatus
+        };
+      });
+
+      setPredictions(formattedPredictions);
       setShowPrediction(true);
     } catch (error) {
-      // عرض رسالة خطأ واضحة في حال نقص البيانات المطلوبة للموديل
-      alert("Error fetching prediction: " + (error.response?.data?.detail || "Insufficient data"));
+      // عرض تفاصيل الخطأ القادم من الباك إيند
+      const errorMsg = error.response?.data?.detail || "Insufficient data";
+      alert(`Error fetching prediction: ${errorMsg}`);
     }
   };
 
   return (
     <div style={styles.container}>
-      {/* قسم الترويسة: عرض الترحيب ونوع المستخدم */}
       <header style={styles.header}>
         <h2>Smart Trading Dashboard <span style={{color: '#3b82f6'}}>(CIS Project)</span></h2>
         <p style={{color: '#888'}}>Welcome back, {username} ({userRole})</p>
       </header>
       
-      {/* القسم 1: بطاقات الإحصائيات السريعة (Card Stats) */}
       <div style={styles.statsGrid}>
         {stats.map(s => (
           <div key={s.id} style={styles.statCard}>
@@ -67,7 +70,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* القسم 2: أدوات التحكم والرسم البياني الأساسي */}
       <div style={styles.mainSection}>
         <div style={styles.controls}>
           <select 
@@ -79,7 +81,7 @@ export default function Dashboard() {
             <option value="ETH">Ethereum (ETH)</option>
             <option value="BNB">Binance (BNB)</option>
             <option value="SOL">Solana (SOL)</option>
-            <option value="DOGE">Dogecoin (DOGE)</option>
+            <option value="DOG">Dogecoin (DOGE)</option> 
           </select>
 
           <button onClick={handlePredictClick} style={styles.predictBtn}>
@@ -87,12 +89,9 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* عرض مكون الرسم البياني التاريخي والمتوقع */}
         <PriceChart historyData={history} predictionData={predictions} showPrediction={showPrediction} />
       </div>
 
-      {/* القسم 3: لوحة تحكم المسؤول (Admin Control Panel) */}
-      {/* تظهر هذه الأدوات فقط إذا كانت صلاحية المستخدم هي 'admin' */}
       {userRole === "admin" && (
         <div style={styles.formSection}>
           <div style={{ borderLeft: '4px solid #22c55e', paddingLeft: '15px', marginBottom: '20px' }}>
@@ -101,15 +100,12 @@ export default function Dashboard() {
           </div>
           
           <div style={styles.adminToolsGrid}>
-             {/* أداة إضافة سجل واحد يدوياً للمحاكاة */}
             <AddDataForm />
-            {/* أداة الرفع الجماعي للبيانات التاريخية عبر ملفات CSV */}
             <CsvUpload />
           </div>
         </div>
       )}
 
-      {/* القسم 4: جدول تفاصيل نتائج التوقع الرقمي */}
       {showPrediction && (
         <div style={styles.tableSection}>
           <h3>📋 Detailed Prediction Results for {selectedCoin}</h3>
@@ -134,7 +130,7 @@ export default function Dashboard() {
                       <span style={styles.badgeStable}>🟡 Stable/Bearish</span>
                     )}
                   </td>
-                  <td>{p.confidence}</td>
+                  <td>{p.display_confidence}</td>
                 </tr>
               ))}
             </tbody>
@@ -145,7 +141,6 @@ export default function Dashboard() {
   );
 }
 
-// التنسيقات الداخلية المنظمة (CSS-in-JS)
 const styles = {
   container: { padding: '20px', color: 'white', background: '#0a0a0a', minHeight: '100vh', fontFamily: 'Arial, sans-serif' },
   header: { marginBottom: '20px', borderBottom: '1px solid #222', paddingBottom: '10px' },
@@ -161,8 +156,8 @@ const styles = {
   adminToolsGrid: { display: 'flex', flexDirection: 'column', gap: '20px' },
   tableSection: { background: '#111', padding: '20px', borderRadius: '10px' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '10px' },
-  tableHeader: { color: '#888', textAlign: 'left', borderBottom: '1px solid #333', paddingBottom: '10px' },
-  tableRow: { borderBottom: '1px solid #222' },
+  tableHeader: { color: '#888', textAlign: 'left', borderBottom: '1px solid #333', paddingBottom: '10px', paddingLeft: '10px' },
+  tableRow: { borderBottom: '1px solid #222', height: '40px' },
   badgeUp: { background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', padding: '4px 8px', borderRadius: '4px' },
   badgeStable: { background: 'rgba(234, 179, 8, 0.1)', color: '#eab308', padding: '4px 8px', borderRadius: '4px' },
 };

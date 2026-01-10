@@ -1,99 +1,120 @@
 import os
-from fastapi import FastAPI
+import pandas as pd
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import get_settings
-from app.db.session import engine, SessionLocal
-from app.db import models 
-from app.workers.scheduler import start_scheduler
+from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-# استيراد الـ Routers الأساسية للنظام
-#
+# استيراد إعدادات قاعدة البيانات والموديلات
+from app.db import models
+from app.db.session import engine, SessionLocal, get_db
+from app.core.config import get_settings
 from app.routers import auth_router, prices, sentiment, predict, health, admin_reports
 
-settings = get_settings()
+app = FastAPI(title="Crypto Prediction System - Data Porter")
 
-app = FastAPI(
-    title="Crypto Price Prediction API",
-    description="Backend for crypto prediction & sentiment analysis project",
-    version="1.1.0",
-)
-
-# إعدادات الـ CORS لضمان اتصال الـ React (Frontend) بالسيرفر
-#
-origins = [    
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173", # Vite
-]
-
+# --- إعدادات CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,      
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"], 
 )
 
-# تسجيل جميع المسارات في النظام تحت بادئة /api
-#
+# --- تسجيل المسارات ---
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
-app.include_router(sentiment.router, prefix="/api")
-app.include_router(predict.router, prefix="/api")
-app.include_router(health.router, prefix="/api")
-app.include_router(admin_reports.router, prefix="/api")
 
-@app.on_event("startup")
-def on_startup():
+# ============================================================
+# 📥 الوظيفة الكبرى: رفع بيانات الأسعار والمشاعر معاً
+# ============================================================
+
+@app.post("/api/admin/upload-dataset", tags=["Data Import Tool"])
+async def upload_full_dataset(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
-    حدث بداية التشغيل: يقوم بتهيئة قاعدة البيانات وحقن البيانات الأساسية.
-   
+    ارفع ملف CSV (dataset_ohlcv_with_market_sentiment)
+    سيقوم الكود بتوزيعه على جدولي Candles و Sentiments تلقائياً
     """
-    # 1. إنشاء الجداول بناءً على الموديلات المحدثة (ERD)
-    #
-    models.Base.metadata.create_all(bind=engine)
-    
-    # 2. حقن البيانات الأساسية (Seeding) لضمان عمل الروابط (Foreign Keys)
-    #
-    db = SessionLocal()
     try:
-        # فحص وإضافة العملات إذا كان الجدول فارغاً
-        if not db.query(models.CryptoAsset).first():
-            print("🚀 Initializing Crypto Assets in database...")
-            assets = [
-                models.CryptoAsset(symbol="BTC", name="Bitcoin"),
-                models.CryptoAsset(symbol="ETH", name="Ethereum"),
-                models.CryptoAsset(symbol="BNB", name="Binance Coin"),
-                models.CryptoAsset(symbol="SOL", name="Solana"),
-                models.CryptoAsset(symbol="DOG", name="Dogecoin")
-            ]
-            db.add_all(assets)
-            
-            # إضافة الإطار الزمني 1h اللازم لربط الشموع والتوقعات
-            #
-            if not db.query(models.Timeframe).filter(models.Timeframe.code == "1h").first():
-                db.add(models.Timeframe(code="1h", description="Hourly Timeframe"))
-            
+        # 1. قراءة الملف باستخدام pandas
+        df = pd.read_csv(file.file)
+        
+        # التأكد من وجود الأعمدة المطلوبة
+        required_cols = ['open_time', 'symbol', 'open', 'close', 'avg_sentiment']
+        if not all(col in df.columns for col in required_cols):
+            raise HTTPException(status_code=400, detail="الملف ينقصه أعمدة أساسية!")
+
+        # 2. تجهيز العملات والفترات (Lookups)
+        # سنجلب ID الـ Timeframe الخاص بالساعة '1h'
+        tf = db.query(models.Timeframe).filter(models.Timeframe.code == "1h").first()
+        if not tf:
+            tf = models.Timeframe(code="1h", description="Hourly")
+            db.add(tf)
             db.commit()
-            print("✅ Database Seeding completed successfully!")
+            db.refresh(tf)
+
+        # 3. معالجة البيانات وتحويلها لتنسيق قاعدة البيانات
+        candles_to_add = []
+        sentiments_to_add = []
+
+        # تحويل الرموز (Symbols) لـ IDs
+        symbol_map = {s.symbol.lower(): s.asset_id for s in db.query(models.CryptoAsset).all()}
+
+        for _, row in df.iterrows():
+            sym = str(row['symbol']).lower()
+            
+            # إذا العملة مش موجودة بجدول CryptoAsset، بنضيفها
+            if sym not in symbol_map:
+                new_asset = models.CryptoAsset(symbol=sym.upper(), name=sym.upper())
+                db.add(new_asset)
+                db.commit()
+                db.refresh(new_asset)
+                symbol_map[sym] = new_asset.asset_id
+
+            asset_id = symbol_map[sym]
+
+            # تجهيز بيانات الشموع (Candles)
+            candles_to_add.append({
+                "asset_id": asset_id,
+                "timeframe_id": tf.timeframe_id,
+                "timestamp": row['open_time'],
+                "open": row['open'],
+                "high": row['high'],
+                "low": row['low'],
+                "close": row['close'],
+                "volume": row['volume'],
+                "exchange": "Binance" # افتراضي
+            })
+
+            # تجهيز بيانات المشاعر (Sentiments)
+            if row['sent_count'] > 0: # بنضيف مشاعر فقط إذا كان في داتا
+                sentiments_to_add.append({
+                    "asset_id": asset_id,
+                    "timestamp": row['open_time'],
+                    "avg_sentiment": row['avg_sentiment'],
+                    "sent_count": row['sent_count'],
+                    "pos_count": row['pos_count'],
+                    "neg_count": row['neg_count'],
+                    "source": "Market Data"
+                })
+
+        # 4. الحفظ الجماعي (Bulk Insert) للسرعة
+        db.bulk_insert_mappings(models.Candle, candles_to_add)
+        db.bulk_insert_mappings(models.Sentiment, sentiments_to_add)
+        
+        db.commit()
+        return {
+            "status": "Success",
+            "message": f"تم رفع {len(candles_to_add)} سجل أسعار و {len(sentiments_to_add)} سجل مشاعر بنجاح!"
+        }
+
     except Exception as e:
-        print(f"⚠️ Seeding Error: {e}")
         db.rollback()
-    finally:
-        db.close()
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=f"حدث خطأ أثناء المعالجة: {str(e)}")
 
-    # 3. تشغيل المجدول (Scheduler) للمهام الخلفية
-    #
-    if os.getenv("RUN_MAIN") == "true" or os.getenv("TESTING") != "true":
-        start_scheduler()
-
+# --- باقي كود الـ Startup والـ Root كما هو ---
 @app.get("/")
 def root():
-    """
-    نقطة النهاية الرئيسية للتأكد من حالة السيرفر.
-    """
-    return {
-        "status": "Online",
-        "message": "🚀 Backend is running with the updated ERD structure",
-        "database": "Connected & Seeded"
-    }
+    return {"message": "Server is running, go to /docs to upload your file"}

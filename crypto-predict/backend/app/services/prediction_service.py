@@ -2,82 +2,62 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from app.db import models
 
-# ==========================================
-# دالة تنظيف ومعالجة نسبة الثقة (Sanitization)
-# ==========================================
 def clean_confidence_value(raw_value) -> float:
-    """
-    تحويل القيمة من نص (مثل '44%') إلى رقم عشري نقي (0.44).
-    هذا يضمن توافق البيانات مع نوع double precision في PostgreSQL.
-    """
     try:
-        # إزالة الرموز النصية والمسافات
         clean_str = str(raw_value).replace('%', '').strip()
         val = float(clean_str)
-        
-        # تحويل القيم المئوية (مثل 44) إلى كسر عشري (0.44)
         if val > 1:
             val = val / 100.0
-            
         return round(val, 4)
-    except (ValueError, TypeError):
-        return 0.50 # قيمة افتراضية في حال الخطأ
+    except:
+        return 0.50
 
-# ==========================================
-# محرك التوقعات (Prediction Engine)
-# ==========================================
-def generate_predictions(
-    db: Session,
-    asset_id: int,
-    timeframe_id: int,
-    user_id: int,
-    raw_ai_output: dict = None
-):
-    """
-    🔮 محرك التوقعات المحدث بناءً على الرسمة (ERD).
-    يقوم بربط التوقع بالعملة، الإطار الزمني، والمستخدم.
-    """
+def generate_predictions(db: Session, asset_id: int, timeframe_id: int, user_id: int, raw_ai_output: dict = None):
+    # 1. جلب معلومات العملة (للحصول على الرمز النصي مثل BTC)
+    asset_info = db.query(models.CryptoAsset).filter(models.CryptoAsset.asset_id == asset_id).first()
+    symbol_name = asset_info.symbol if asset_info else "UNKNOWN"
 
-    # 1. جلب آخر سعر إغلاق من جدول OHLCV_Candle (Anchor Price)
-    # نستخدم asset_id للبحث لضمان سلامة العلاقات (Normalization)
+    # 2. جلب آخر سعر إغلاق
     latest_candle = db.query(models.Candle).filter(
         models.Candle.asset_id == asset_id
     ).order_by(models.Candle.timestamp.desc()).first()
 
     base_price = float(latest_candle.close) if latest_candle else 50000.0
 
-    # 2. معالجة نسبة الثقة (حل مشكلة Mismatch النوع)
+    # 3. معالجة نسبة الثقة
     confidence_input = raw_ai_output.get("confidence", "50%") if raw_ai_output else "50%"
     final_confidence = clean_confidence_value(confidence_input)
 
     predictions_list = []
 
-    # توليد 5 توقعات مستقبلية (Hourly)
+    # توليد 5 توقعات
     for i in range(1, 6):
         target_ts = datetime.now(timezone.utc) + timedelta(hours=i)
-        
-        # محاكاة لنتيجة الموديل الهجين (Hybrid XGB-LSTM)
-        prediction_factor = 1 + (0.005 * i) 
+        prediction_factor = 1 + (0.002 * i) # محاكاة بسيطة
         predicted_val = base_price * prediction_factor
 
-        # 3. إنشاء سجل التوقع (مطابق للرسمة حرفياً)
-        #
+        # إنشاء السجل مع التأكد من تعبئة كافة الحقول المطلوبة في الـ ERD
         new_prediction = models.Prediction(
-            asset_id=asset_id,               # الربط بجدول CryptoAsset
-            timeframe_id=timeframe_id,       # الربط بجدول Timeframe
-            user_id=user_id,                 # الربط بجدول User
-            timestamp=target_ts,             # نوعه timestamp with time zone
-            predicted_price=round(predicted_val, 2), # نوعه double precision
-            confidence=final_confidence,     # نوعه double precision
-            model_used="XGBoost_LSTM_Hybrid",# نوعه var(20)
-            created_at=datetime.now(timezone.utc)
+            asset_id=asset_id,
+            asset=symbol_name,             # أضفنا هذا السطر لأنه مطلوب في الموديل عندك
+            timeframe_id=timeframe_id,
+            user_id=user_id,
+            timestamp=target_ts,
+            predicted_price=round(predicted_val, 2),
+            confidence=final_confidence,
+            model_used="XGBoost_LSTM",     # تأكد أن النص لا يتجاوز 20 حرفاً
         )
 
         db.add(new_prediction)
         predictions_list.append(new_prediction)
 
-    # 4. حفظ البيانات في PostgreSQL
-    #
-    db.commit()
-    
-    return predictions_list
+    try:
+        db.commit()
+        # عمل refresh لضمان قراءة البيانات بعد الحفظ (تجنب مشاكل Lazy Loading)
+        for p in predictions_list:
+            db.refresh(p)
+        return predictions_list
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Database Save Error: {e}")
+        return None

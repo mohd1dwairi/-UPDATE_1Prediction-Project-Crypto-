@@ -5,16 +5,13 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# إنشاء محرك قاعدة البيانات
+# ملاحظة: تأكد أن DATABASE_URL في ملف الـ .env ينتهي بـ @localhost:5432/crypto_db 
+# وليس @postgres:5432/crypto_db
 engine = create_engine(settings.DATABASE_URL)
 
-# إعداد الجلسات
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# التعريف الأساسي للموديلات
 Base = declarative_base()
 
-# دالة الحصول على قاعدة البيانات (Dependency)
 def get_db():
     db = SessionLocal()
     try:

@@ -47,10 +47,11 @@ class User(Base):
 # ==========================================
 # 4) جدول المشاعر (Sentiments)
 # ==========================================
+"""
 class Sentiment(Base):
     __tablename__ = "sentiments"
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime(timezone=True), nullable=False)
+    id = Column(nteger, primary_key=True)
+    timestamp = ColuImn(DateTime(timezone=True), nullable=False)
     sentiment_score = Column(DECIMAL(5, 4))
     source = Column(String(100))
     sentiment_id = Column(Integer)
@@ -58,10 +59,29 @@ class Sentiment(Base):
     sent_count = Column(Integer)
     pos_count = Column(Integer)
     neg_count = Column(Integer)
-    
+    ""
     # الربط حسب الرسمة
     asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
     asset_ref = relationship("CryptoAsset", back_populates="sentiments")
+"""
+class Sentiment(Base):
+    __tablename__ = "sentiments"
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    avg_sentiment = Column(Float)
+    sent_count = Column(Integer)
+    pos_count = Column(Integer)
+    neg_count = Column(Integer)
+    # الحقول الجديدة المطلوبة للموديل
+    neu_count = Column(Integer, default=0)
+    pos_ratio = Column(Float, default=0.0)
+    neg_ratio = Column(Float, default=0.0)
+    neu_ratio = Column(Float, default=0.0)
+    has_news = Column(Integer, default=0)
+    
+    asset_id = Column(Integer, ForeignKey("crypto_assets.asset_id"))
+    asset_ref = relationship("CryptoAsset", back_populates="sentiments")
+
 
 # ==========================================
 # 5) جدول الشموع (OHLCV_Candle)
