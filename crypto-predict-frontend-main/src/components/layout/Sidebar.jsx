@@ -5,10 +5,6 @@ import api from "../../services/api"; // التأكد من استيراد ملف
 // القائمة الأساسية لجميع المستخدمين
 const navItems = [
   { label: "Overview", path: "/dashboard" },
-  { label: "Markets", path: "/dashboard/markets" },
-  { label: "Predictions", path: "/dashboard/predictions" },
-  { label: "Sentiment", path: "/dashboard/sentiment" },
-  { label: "Settings", path: "/dashboard/settings" },
 ];
 
 export default function Sidebar() {
