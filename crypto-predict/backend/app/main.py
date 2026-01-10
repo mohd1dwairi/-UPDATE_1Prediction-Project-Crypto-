@@ -10,7 +10,6 @@ from app.db import models
 from app.db.session import engine, SessionLocal, get_db
 from app.core.config import get_settings
 from app.routers import auth_router, prices, sentiment, predict, health, admin_reports
-
 app = FastAPI(title="Crypto Prediction System - Data Porter")
 
 # --- إعدادات CORS ---
@@ -25,6 +24,7 @@ app.add_middleware(
 # --- تسجيل المسارات ---
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(prices.router, prefix="/api")
+app.include_router(admin_reports.router, prefix="/api")
 
 # ============================================================
 # 📥 الوظيفة الكبرى: رفع بيانات الأسعار والمشاعر معاً
