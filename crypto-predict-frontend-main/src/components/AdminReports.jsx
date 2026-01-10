@@ -37,7 +37,7 @@ export default function AdminReports() {
   return (
     <div style={styles.reportPage}>
       <h2 style={{borderBottom: '2px solid #3b82f6', paddingBottom: '10px'}}>
-        System Performance & Audit (CIS Project)
+        System Performance & Audit 
       </h2>
 
       {/* --- 1. إحصائيات النظام (Cards) --- */}

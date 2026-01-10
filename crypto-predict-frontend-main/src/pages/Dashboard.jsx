@@ -57,7 +57,7 @@ export default function Dashboard() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <h2>Smart Trading Dashboard <span style={{color: '#3b82f6'}}>(CIS Project)</span></h2>
+        <h2>Smart Trading Dashboard <span style={{color: '#3b82f6'}}></span></h2>
         <p style={{color: '#888'}}>Welcome back, {username} ({userRole})</p>
       </header>
       
