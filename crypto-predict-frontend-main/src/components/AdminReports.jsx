@@ -86,7 +86,7 @@ export default function AdminReports() {
           </table>
         </div>
 
-        {/* --- 3. جدول سجلات التدريب (Training History) - الإضافة الجديدة --- */}
+        
         <div style={{...styles.tableContainer, marginTop: '30px'}}>
           <h3 style={styles.tableTitle}>⚙️ AI Model Training History</h3>
           <table style={styles.table}>

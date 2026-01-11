@@ -35,9 +35,7 @@ def analyze_texts(symbol: str, texts: list[str], db: Session):
 
 
 def analyze_mock_sentiment(symbol: str, db: Session):
-    """
-    دالة تغلّف نصوص Mock وتستدعي تحليل المشاعر
-    """
+    
     mock_texts = [
         f"{symbol} is doing great!",
         f"People are buying {symbol} a lot today.",

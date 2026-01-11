@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 const AddDataForm = () => {
-    // 1. Available coins list (matching your database)
     const availableCoins = ["BTC", "ETH", "BNB", "SOL", "DOGE"];
 
     const [formData, setFormData] = useState({
         symbol: 'BTC',
         open: '', high: '', low: '', close: '', volume: '',
-        avg_sentiment: 0 // Default to neutral
+        avg_sentiment: 0
     });
     
     const [loading, setLoading] = useState(false);

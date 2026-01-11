@@ -7,16 +7,12 @@ import numpy as np
 import pandas as pd
 import os
 
-# المسار المعتمد داخل حاوية Docker بناءً على سجلاتك
-#MODEL_DIR = "/app/app/ml_models" 
-# كود أكثر مرونة لتحديد المسار
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_DIR = os.path.join(BASE_DIR, "ml_models")
 
 class InferenceService:
     def __init__(self):
         try:
-            # 1. تحميل الإعدادات والميزات
             with open(os.path.join(MODEL_DIR, "features.json"), "r") as f:
                 self.features = json.load(f)
             with open(os.path.join(MODEL_DIR, "thresholds.json"), "r") as f:
@@ -35,7 +31,6 @@ class InferenceService:
             print("✅ AI Engine: All models loaded successfully!")
         except Exception as e:
             print(f"❌ AI Engine Error: {str(e)}")
-            # لا نرفع الخطأ هنا لكي لا يتوقف السيرفر عن العمل بالكامل
             self.lstm_model = None 
 
     def load_lstm(self):
@@ -45,10 +40,10 @@ class InferenceService:
                 super().__init__()
                 self.lstm = nn.LSTM(input_size=n_features, hidden_size=64, num_layers=2, batch_first=True)
                 self.head = nn.Sequential(
-                    nn.Linear(64, 64),  # Layer 0
-                    nn.ReLU(),          # Layer 1
-                    nn.Dropout(0.2),    # Layer 2 (هذه الإضافة تحل مشكلة Missing Key)
-                    nn.Linear(64, 1)    # Layer 3 (تطابق head.3 في ملفك)
+                    nn.Linear(64, 64),  
+                    nn.ReLU(),          
+                    nn.Dropout(0.2),    
+                    nn.Linear(64, 1)    
                 )
             def forward(self, x):
                 out, _ = self.lstm(x)

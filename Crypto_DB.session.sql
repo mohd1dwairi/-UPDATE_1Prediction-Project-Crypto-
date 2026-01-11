@@ -18,4 +18,4 @@ VALUES (
     is_active:boolean,
     'registered_at:timestamp with time zone'
   );
-  -- 
+  -- candle_id

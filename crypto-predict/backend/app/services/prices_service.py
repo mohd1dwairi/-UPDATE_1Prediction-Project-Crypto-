@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from app.db import models
 
-# تحسين الوظيفة لتجلب بيانات OHLCV حقيقية كما هو مطلوب في UC-06
 def fetch_prices_from_api(asset_id: int, symbol: str, timeframe_id: int, timeframe_code: str, db: Session):
    
     # استخدام Binance للحصول على بيانات OHLCV كاملة (Open, High, Low, Close, Volume)
@@ -21,22 +20,21 @@ def fetch_prices_from_api(asset_id: int, symbol: str, timeframe_id: int, timefra
         values.append(
             {
                 "asset_id": asset_id,        # ربط مع جدول CryptoAsset 
-                "timeframe_id": timeframe_id, # ربط مع جدول Timeframe 
+                "timeframe_id": timeframe_id,  
                 "timestamp": ts,
-                "open": float(item[1]),      # سعر الفتح 
-                "high": float(item[2]),      # أعلى سعر 
-                "low": float(item[3]),       # أدنى سعر 
-                "close": float(item[4]),     # سعر الإغلاق [
-                "volume": float(item[5]),    # الكمية 
+                "open": float(item[1]),      
+                "high": float(item[2]),      
+                "low": float(item[3]),       
+                "close": float(item[4]),     
+                "volume": float(item[5]),    
             }
         )
 
     if not values:
         return 0
 
-    # إدخال البيانات في جدول OHLCV_Candle  
     stmt = insert(models.OHLCV_Candle).values(values)
-     #منع التكرار
+
     stmt = stmt.on_conflict_do_nothing(
         index_elements=["asset_id", "timeframe_id", "timestamp"]
     )

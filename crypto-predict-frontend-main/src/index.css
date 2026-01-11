@@ -1098,8 +1098,7 @@ body {
     margin: 0 auto;
   }
 }
-/* Hero image on login page */
-/* Hero image on login page */
+
 .login-hero {
   width: 100%;
   margin-bottom: 14px;
@@ -1109,14 +1108,13 @@ body {
 
 .login-hero-img {
   width: 100%;
-  max-width: 520px;      /* ✅ ما تكبر أكثر من هيك عرض */
-  max-height: 330px;     /* ✅ حد أعلى للارتفاع */
+  max-width: 520px;      
+  max-height: 330px;     
   height: auto;
   display: block;
   border-radius: 20px;
-  /*box-shadow:
-    0 18px 45px rgb(40, 110, 7),
-    0 0 0 1px rgba(150, 7, 36, 0.7);*/
+ 
+
   object-fit: cover;
   opacity: 1;
   transform: translateY(10px);

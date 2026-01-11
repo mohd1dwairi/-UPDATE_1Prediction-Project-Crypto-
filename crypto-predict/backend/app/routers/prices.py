@@ -6,12 +6,12 @@ import pandas as pd
 import io
 from datetime import datetime, timezone
 from typing import List, Optional
-
 from app.db.session import get_db
 from app.db import models
 from app.services.prediction_service import generate_predictions    
 from app.core.security import get_current_user
 from app.schemas.prediction_schema import PredictionResponse
+
 
 router = APIRouter(prefix="/prices", tags=["Prices"])
 
@@ -24,7 +24,7 @@ class ManualDataInput(BaseModel):
     volume: float
     avg_sentiment: Optional[float] = 0.0
 
-# 1. جلب البطاقات العلوية (Top Assets)
+#     (Top Assets)
 @router.get("/top-assets")
 def get_top_assets(db: Session = Depends(get_db)):
     subquery = db.query(
@@ -70,7 +70,7 @@ def get_ai_prediction(
     predictions = generate_predictions(
         db=db,
         asset_id=asset.asset_id,
-        timeframe_id=1, # 1h
+        timeframe_id=1,
         user_id=current_user.user_id
     )
 
